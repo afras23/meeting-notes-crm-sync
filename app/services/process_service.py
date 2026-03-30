@@ -8,6 +8,7 @@ Runs the full pipeline: transcribe/parse -> extract -> CRM sync -> notify -> per
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,8 @@ from app.services.crm_service import CRMService
 from app.services.extraction_service import ExtractionService
 from app.services.notification_service import NotificationService
 from app.services.transcription_service import TranscriptionService
+
+logger = logging.getLogger(__name__)
 
 
 def _hash_transcript(text: str) -> str:
@@ -123,7 +126,15 @@ class MeetingProcessService:
 
         crm_result: dict[str, Any] = {}
         if deal_id:
-            crm_result = await self._crm.apply_updates(meeting=meeting, deal_id=deal_id)
+            try:
+                crm_result = await self._crm.apply_updates(meeting=meeting, deal_id=deal_id)
+            except Exception as e:
+                logger.exception("CRM apply_updates failed; continuing with meeting persist")
+                crm_result = {
+                    "error": str(e),
+                    "changed_properties": {},
+                    "previous_snapshot": {},
+                }
 
         await self._meetings.upsert(
             session,

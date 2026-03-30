@@ -61,3 +61,12 @@ def app() -> FastAPI:
 
     _ = get_settings()
     return create_app()
+
+
+@pytest.fixture
+def sample_transcripts() -> object:
+    """Realistic transcript snippets for parametrized tests."""
+
+    from tests.fixtures import sample_transcripts as st
+
+    return st

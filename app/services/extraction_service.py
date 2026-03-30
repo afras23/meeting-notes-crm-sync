@@ -8,6 +8,7 @@ Transforms meeting transcripts into validated structured meeting data with audit
 from __future__ import annotations
 
 import hashlib
+import html
 import json
 import logging
 import re
@@ -18,7 +19,7 @@ from uuid import uuid4
 from pydantic import ValidationError as PydanticValidationError
 
 # Local
-from app.core.constants import MAX_INPUT_PREVIEW_CHARS
+from app.core.constants import MAX_INPUT_PREVIEW_CHARS, MAX_TRANSCRIPT_CHARS_FOR_LLM
 from app.core.exceptions import ExtractionFailed, ValidationFailed
 from app.models.action_item import ActionItem
 from app.models.audit import AuditEntry
@@ -120,15 +121,29 @@ class ExtractionService:
                 occurred_at=occurred_at,
             )
 
+        transcript_for_llm = cleaned_transcript[:MAX_TRANSCRIPT_CHARS_FOR_LLM]
         system_prompt, user_prompt, prompt_version = get_prompt(
-            prompt_name, transcript=cleaned_transcript
+            prompt_name, transcript=transcript_for_llm
         )
-        ai_call = await self._ai.generate_json(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            prompt_name=prompt_name,
-            prompt_version=prompt_version,
-        )
+
+        last_timeout: TimeoutError | None = None
+        ai_call = None
+        for _attempt in range(3):
+            try:
+                ai_call = await self._ai.generate_json(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    prompt_name=prompt_name,
+                    prompt_version=prompt_version,
+                )
+                break
+            except TimeoutError as e:
+                last_timeout = e
+        if ai_call is None:
+            raise ExtractionFailed(
+                "AI request timed out after retries.",
+                context={"attempts": 3},
+            ) from last_timeout
 
         try:
             parsed_output = json.loads(ai_call.content)
@@ -252,12 +267,13 @@ class ExtractionService:
             for raw in raw_actions:
                 if not isinstance(raw, dict):
                     continue
+                desc_raw = str(raw.get("description") or "").strip() or "Follow up"
                 action_items.append(
                     ActionItem(
                         id=str(uuid4()),
                         meeting_id=meeting_id,
                         owner=str(raw["owner"]) if raw.get("owner") else None,
-                        description=str(raw.get("description") or "").strip() or "Follow up",
+                        description=html.escape(desc_raw),
                         deadline=_parse_iso_datetime(raw.get("due_date_iso")),
                         status=str(raw.get("status") or "open"),
                     )
