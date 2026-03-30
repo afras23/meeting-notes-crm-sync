@@ -1,0 +1,12 @@
+version: "1"
+crm: "hubspot"
+
+entities:
+  deal:
+    fields:
+      dealname:
+        source: "meeting.title"
+      amount:
+        source: "crm_updates.deal.amount"
+      dealstage:
+        source: "crm_updates.deal.stage"

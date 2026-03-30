@@ -1,0 +1,8 @@
+version: "1"
+rules:
+  - name: "notify_on_low_confidence"
+    when:
+      confidence_lt: 0.85
+    notify:
+      slack: true
+      email: false

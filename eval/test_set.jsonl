@@ -1,0 +1,2 @@
+{"input":"Discussed proposal. Budget 10k. Next: send follow-up.","expected":{"crm_updates":{"deal":{"amount":10000.0}}}}
+{"input":"Initial qualification call. Next steps discussed.","expected":{"crm_updates":{"deal":{"stage":"qualification"}}}}

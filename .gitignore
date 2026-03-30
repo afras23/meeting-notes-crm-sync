@@ -1,1 +1,40 @@
+### Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 venv/
+.venv/
+env/
+.env
+*.egg-info/
+dist/
+build/
+
+### Tests / tooling
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+
+### Logs / DBs
+*.log
+*.db
+*.sqlite3
+
+### IDE / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+### Node (sometimes used by tooling)
+node_modules/
+
+### Secrets / certs
+*.pem
+*.key
+credentials.json
