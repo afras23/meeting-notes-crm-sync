@@ -15,6 +15,7 @@ import yaml
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Local
+from app.core.retry import retry_async
 from app.integrations.email_client import EmailClientMock
 from app.integrations.slack_client import SlackClientMock
 from app.models.meeting import Meeting
@@ -84,7 +85,7 @@ class NotificationService:
                     event_name=event_name or "meeting", meeting=meeting, crm_result=crm_result
                 )
                 payload: dict[str, object] = {"text": text}
-                await self._slack.post_webhook(webhook, payload)
+                await self._post_slack_with_retry(webhook, payload)
                 await self._notification_repository.create(
                     session,
                     meeting_id=meeting.id,
@@ -113,6 +114,14 @@ class NotificationService:
                     event_type=event_name or "email",
                     payload={"subject": subject, "body_preview": body[:200]},
                 )
+
+    async def _post_slack_with_retry(self, webhook_url: str, payload: dict[str, object]) -> None:
+        """Send Slack webhook with bounded retries (transient network errors)."""
+
+        async def send() -> None:
+            await self._slack.post_webhook(webhook_url, payload)
+
+        await retry_async(send, attempts=3)
 
     def _rule_applies(
         self,

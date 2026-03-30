@@ -1,0 +1,15 @@
+version: "2"
+
+# Example CRM field mapping (copy of production shape for tests and demos).
+# Paths use meeting.model_dump() shape: meeting.title, meeting.crm_updates.deal.*
+crm_mappings:
+  hubspot:
+    entities:
+      deal:
+        fields:
+          dealname:
+            source: "meeting.title"
+          amount:
+            source: "meeting.crm_updates.deal.amount"
+          dealstage:
+            source: "meeting.crm_updates.deal.stage"

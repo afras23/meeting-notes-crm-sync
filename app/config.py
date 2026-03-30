@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     debug: bool = Field(default=False, description="Enable debug mode (dev only).")
     log_level: str = Field(default="INFO", description="DEBUG|INFO|WARNING|ERROR|CRITICAL")
     api_prefix: str = Field(default="/api/v1", description="API route prefix.")
+    docs_enabled: bool = Field(
+        default=True,
+        description="Expose /docs, /redoc, and OpenAPI JSON (set false to disable in locked-down envs).",
+    )
 
     # Database
     database_url: str = Field(
@@ -34,6 +38,17 @@ class Settings(BaseSettings):
     ai_model: str = Field(default="mock-llm", description="Model identifier for cost tracking.")
     max_daily_cost_usd: float = Field(default=5.0, ge=0.0, description="Daily AI spend limit.")
     ai_timeout_seconds: int = Field(default=30, ge=1, le=300, description="AI request timeout.")
+    ai_circuit_failure_threshold: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        description="Consecutive AI failures before opening the circuit breaker.",
+    )
+    ai_circuit_recovery_seconds: float = Field(
+        default=30.0,
+        ge=1.0,
+        description="Seconds before half-open retry after circuit opens.",
+    )
 
     # CRM
     crm_provider: str = Field(default="hubspot_mock", description="hubspot_mock")

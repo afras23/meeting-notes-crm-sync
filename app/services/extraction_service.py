@@ -7,10 +7,12 @@ Transforms meeting transcripts into validated structured meeting data with audit
 # Standard library
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import html
 import json
 import logging
+import random
 import re
 from datetime import UTC, date, datetime
 from uuid import uuid4
@@ -128,7 +130,7 @@ class ExtractionService:
 
         last_timeout: TimeoutError | None = None
         ai_call = None
-        for _attempt in range(3):
+        for attempt in range(3):
             try:
                 ai_call = await self._ai.generate_json(
                     system_prompt=system_prompt,
@@ -139,6 +141,8 @@ class ExtractionService:
                 break
             except TimeoutError as e:
                 last_timeout = e
+                if attempt < 2:
+                    await asyncio.sleep(random.uniform(0.05, 0.25))
         if ai_call is None:
             raise ExtractionFailed(
                 "AI request timed out after retries.",

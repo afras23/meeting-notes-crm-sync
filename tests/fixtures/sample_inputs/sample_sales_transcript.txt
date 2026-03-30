@@ -1,0 +1,4 @@
+Speaker 1: Thanks for joining — let's walk through the Q3 pipeline for Acme.
+Speaker 2: John Smith here with Sarah Chen from procurement.
+Speaker 1: We approved the £50k budget and move from proposal to negotiation.
+Speaker 2: I'll send the revised proposal by Friday; next step is a follow-up call Tuesday.

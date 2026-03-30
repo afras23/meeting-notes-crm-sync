@@ -10,9 +10,12 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import logging
 
 # Local
 from eval.evaluate import run_evaluation
+
+logger = logging.getLogger(__name__)
 
 
 async def _async_main() -> None:
@@ -29,11 +32,12 @@ async def _async_main() -> None:
     )
     args = parser.parse_args()
     report = await run_evaluation(args.test_set, args.output)
-    print(json.dumps(report, indent=2))
-    print(f"\nWrote report to: {report['report_path']}")
+    logger.info("evaluation_complete %s", json.dumps(report, indent=2))
+    logger.info("report_path=%s", report["report_path"])
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(_async_main())
 
 

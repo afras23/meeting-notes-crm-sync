@@ -23,7 +23,7 @@ from app.core.logging import configure_logging, correlation_id_ctx
 from app.core.middleware.correlation import correlation_id_middleware
 from app.core.middleware.rate_limit import RateLimiter, build_rate_limit_middleware
 from app.core.middleware.request_logging import request_logging_middleware
-from app.db.session import init_db
+from app.db.session import get_engine, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,25 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         await init_db()
     yield
     logger.info("Application shutting down")
+    engine = get_engine()
+    await engine.dispose()
 
 
 def create_app() -> FastAPI:
     """Create FastAPI app instance."""
 
     settings = get_settings()
-    app = FastAPI(title="Meeting Notes → CRM Sync", version="1.0.0", lifespan=lifespan)
+    docs_url = "/docs" if settings.docs_enabled else None
+    redoc_url = "/redoc" if settings.docs_enabled else None
+    openapi_url = "/openapi.json" if settings.docs_enabled else None
+    app = FastAPI(
+        title="Meeting Notes → CRM Sync",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
 
     limiter = RateLimiter(requests_per_minute=settings.rate_limit_requests_per_minute)
     app.middleware("http")(build_rate_limit_middleware(limiter=limiter, enabled=True))

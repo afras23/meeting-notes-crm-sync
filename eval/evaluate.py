@@ -6,6 +6,7 @@ Evaluation runner: extraction accuracy, CRM projection, cost/latency aggregates.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +37,8 @@ from eval.metrics import (
 
 DEFAULT_PROMPT_NAME = "meeting_extraction_v2"
 REPORT_MODEL = "gpt-4o"
+
+logger = logging.getLogger(__name__)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -337,8 +340,9 @@ async def run_evaluation(test_set_path: str, output_path: str) -> dict[str, Any]
 def main() -> None:
     import asyncio
 
+    logging.basicConfig(level=logging.INFO)
     result = asyncio.run(run_evaluation("eval/test_set.jsonl", "eval/results"))
-    print(json.dumps(result, indent=2))
+    logger.info("evaluation_report=%s", json.dumps(result, indent=2))
 
 
 if __name__ == "__main__":

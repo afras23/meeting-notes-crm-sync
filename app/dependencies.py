@@ -11,6 +11,7 @@ from functools import lru_cache
 
 # Local
 from app.config import get_settings
+from app.core.circuit_breaker import CircuitBreaker
 from app.db.session import get_db_session
 from app.integrations.calendar_client import CalendarClientMock
 from app.integrations.email_client import EmailClientMock
@@ -34,11 +35,16 @@ def get_ai_client() -> AIClient:
     """Get singleton AI client instance."""
 
     settings = get_settings()
+    breaker = CircuitBreaker(
+        failure_threshold=settings.ai_circuit_failure_threshold,
+        recovery_seconds=settings.ai_circuit_recovery_seconds,
+    )
     return AIClient(
         provider=settings.ai_provider,
         model=settings.ai_model,
         max_daily_cost_usd=settings.max_daily_cost_usd,
         timeout_seconds=settings.ai_timeout_seconds,
+        circuit_breaker=breaker,
     )
 
 

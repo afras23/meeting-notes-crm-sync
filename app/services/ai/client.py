@@ -13,6 +13,7 @@ import time
 from dataclasses import dataclass
 
 # Local
+from app.core.circuit_breaker import CircuitBreaker
 from app.core.exceptions import CostLimitExceeded, ExtractionFailed
 
 logger = logging.getLogger(__name__)
@@ -54,11 +55,13 @@ class AIClient:
         model: str,
         max_daily_cost_usd: float,
         timeout_seconds: int,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
         self._provider = provider
         self._model = model
         self._max_daily_cost_usd = max_daily_cost_usd
         self._timeout_seconds = timeout_seconds
+        self._breaker = circuit_breaker or CircuitBreaker()
         self._daily_cost_usd = 0.0
         self._request_count = 0
 
@@ -105,17 +108,28 @@ class AIClient:
             ExtractionFailed: If provider is unsupported.
         """
 
+        if not self._breaker.allow():
+            raise ExtractionFailed(
+                "AI circuit breaker is open; dependency unavailable.",
+                context={"provider": self._provider},
+            )
+
         if self._daily_cost_usd >= self._max_daily_cost_usd:
+            self._breaker.record_failure()
             raise CostLimitExceeded(self._daily_cost_usd, self._max_daily_cost_usd)
 
         start = time.monotonic()
-        if self._provider == "mock":
-            content = self._mock_response(user_prompt=user_prompt)
-        else:
-            raise ExtractionFailed(
-                "Only AI_PROVIDER=mock is supported in this starter rebuild.",
-                context={"provider": self._provider},
-            )
+        try:
+            if self._provider == "mock":
+                content = self._mock_response(user_prompt=user_prompt)
+            else:
+                raise ExtractionFailed(
+                    "Only AI_PROVIDER=mock is supported in this starter rebuild.",
+                    context={"provider": self._provider},
+                )
+        except Exception:
+            self._breaker.record_failure()
+            raise
 
         latency_ms = (time.monotonic() - start) * 1000.0
         input_tokens = _estimate_tokens(system_prompt) + _estimate_tokens(user_prompt)
@@ -124,6 +138,7 @@ class AIClient:
 
         self._daily_cost_usd += cost_usd
         self._request_count += 1
+        self._breaker.record_success()
 
         logger.info(
             "AI request completed",

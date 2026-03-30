@@ -17,6 +17,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 # Local
 from app.core.exceptions import ValidationFailed
+from app.core.retry import retry_async
 from app.integrations.hubspot_client import HubSpotClientMock
 from app.models.crm_mapping import CRMMappingRoot
 from app.models.meeting import Meeting
@@ -103,9 +104,13 @@ class CRMService:
 
         note_id: str | None = None
         if changed:
-            await self._crm.update_deal(deal_id, changed)
-            note_body = f"Meeting: {meeting.title}\nSummary: {meeting.extraction.summary[:400]}"
-            note_id = await self._crm.add_note(deal_id=deal_id, body=note_body)
+
+            async def _persist_changes() -> str | None:
+                await self._crm.update_deal(deal_id, changed)
+                note_body = f"Meeting: {meeting.title}\nSummary: {meeting.extraction.summary[:400]}"
+                return await self._crm.add_note(deal_id=deal_id, body=note_body)
+
+            note_id = await retry_async(_persist_changes, attempts=3)
             logger.info(
                 "Applied CRM deal diff",
                 extra={
