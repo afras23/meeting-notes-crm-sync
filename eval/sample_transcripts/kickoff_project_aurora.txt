@@ -1,0 +1,4 @@
+Speaker 1: Welcome to the client kickoff for Project Aurora.
+Speaker 2: Attendees: Alice, Bob, Carol, Dan, Erin, Frank.
+Speaker 1: Action: Alice owns RACI; Bob owns timeline; Carol owns integrations.
+Speaker 2: Dan will set up Slack; Erin will schedule weekly demos; Frank will security review.
