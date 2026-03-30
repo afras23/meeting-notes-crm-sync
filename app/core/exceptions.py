@@ -54,6 +54,13 @@ class ExtractionFailed(AppError):
         super().__init__(message, error_code="EXTRACTION_FAILED", context=context)
 
 
+class NotFound(AppError):
+    """Requested resource does not exist."""
+
+    def __init__(self, message: str, *, context: dict[str, object] | None = None) -> None:
+        super().__init__(message, error_code="NOT_FOUND", context=context)
+
+
 class RateLimited(AppError):
     """External provider rate limited the request."""
 

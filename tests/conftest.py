@@ -17,7 +17,29 @@ from fastapi import FastAPI
 # Local
 from app.config import get_settings
 from app.db.session import init_db, reset_engine
+from app.dependencies import (
+    get_ai_client,
+    get_audit_repository,
+    get_calendar_client,
+    get_crm_client,
+    get_email_client,
+    get_slack_client,
+)
 from app.main import create_app
+
+
+def _clear_dependency_caches() -> None:
+    """Reset singletons that hold in-memory state between tests."""
+
+    for fn in (
+        get_ai_client,
+        get_audit_repository,
+        get_calendar_client,
+        get_crm_client,
+        get_email_client,
+        get_slack_client,
+    ):
+        fn.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +50,7 @@ def _test_env() -> None:
     os.environ.setdefault("APP_ENV", "test")
     os.environ.setdefault("AI_PROVIDER", "mock")
     get_settings.cache_clear()
+    _clear_dependency_caches()
     reset_engine()
     asyncio.run(init_db())
 

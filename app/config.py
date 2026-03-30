@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     )
     email_to: str = Field(default="", description="Recipient email for notifications (optional).")
 
+    # Rate limiting
+    rate_limit_requests_per_minute: int = Field(
+        default=60, ge=1, le=10_000, description="Basic RPM rate limit for public endpoints."
+    )
+
+    # Cost limits
+    cost_limit_usd: float = Field(
+        default=10.0, ge=0.0, description="Daily cost hard limit for metrics."
+    )
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

@@ -25,7 +25,8 @@ from app.services.ai.client import AIClient
 from app.services.crm_service import CRMService
 from app.services.extraction_service import ExtractionService
 from app.services.notification_service import NotificationService
-from app.services.transcription_service import TranscriptionService
+from app.services.process_service import MeetingProcessService
+from app.services.transcription_service import LlmClient, TranscriptionService
 
 
 @lru_cache
@@ -100,10 +101,31 @@ def get_notification_repository() -> NotificationRepository:
     return NotificationRepository()
 
 
+def get_notification_repo() -> NotificationRepository:
+    """FastAPI dependency provider for notification repository."""
+
+    return get_notification_repository()
+
+
 def get_transcription_service() -> TranscriptionService:
     """Construct transcription service."""
 
-    return TranscriptionService()
+    settings = get_settings()
+    return TranscriptionService(LlmClient(ai=get_ai_client()), settings)
+
+
+def get_process_service() -> MeetingProcessService:
+    """Construct process orchestration service."""
+
+    return MeetingProcessService(
+        get_transcription_service(),
+        get_extraction_service(),
+        get_crm_service(),
+        get_notification_service(),
+        get_meeting_repository(),
+        get_crm_sync_repository(),
+        get_audit_repository(),
+    )
 
 
 def get_extraction_service() -> ExtractionService:
@@ -169,8 +191,10 @@ __all__ = [
     "get_extraction_service",
     "get_meeting_repo",
     "get_meeting_repository",
+    "get_notification_repo",
     "get_notification_repository",
     "get_notification_service",
+    "get_process_service",
     "get_slack_client",
     "get_transcription_service",
 ]

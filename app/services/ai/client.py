@@ -152,6 +152,11 @@ class AIClient:
             prompt_version=prompt_version,
         )
 
+    async def ping(self) -> bool:
+        """Mock provider reachability check."""
+
+        return self._provider == "mock"
+
     def _mock_response(self, *, user_prompt: str) -> str:
         """
         Produce a deterministic mock extraction matching MeetingExtraction schema.

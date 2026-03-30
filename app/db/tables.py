@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any
 
 # Third party
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 # Local
@@ -31,6 +31,13 @@ class MeetingORM(Base):
     extraction_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     crm_updates_json: Mapped[dict[str, Any]] = mapped_column(JSON)
     confidence: Mapped[float] = mapped_column(Float())
+    transcript_hash: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="processed", index=True)
+    processing_ms: Mapped[float] = mapped_column(Float(), default=0.0)
+    cost_usd: Mapped[float] = mapped_column(Float(), default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+    __table_args__ = (UniqueConstraint("transcript_hash", name="uq_meetings_transcript_hash"),)
 
     action_items: Mapped[list["ActionItemORM"]] = relationship(
         "ActionItemORM",
@@ -52,6 +59,7 @@ class ActionItemORM(Base):
     description: Mapped[str] = mapped_column(Text())
     deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
     meeting: Mapped["MeetingORM"] = relationship("MeetingORM", back_populates="action_items")
 

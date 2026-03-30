@@ -8,117 +8,96 @@ Accepts meeting transcripts, runs extraction, applies CRM updates, and triggers 
 from __future__ import annotations
 
 import logging
-from datetime import datetime
-from typing import Any
+from typing import Literal
 
 # Third party
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Local
-from app.dependencies import (
-    get_calendar_client,
-    get_crm_service,
-    get_crm_sync_repo,
-    get_db_session,
-    get_extraction_service,
-    get_meeting_repo,
-    get_notification_service,
-    get_transcription_service,
-)
-from app.integrations.calendar_client import CalendarClientMock
-from app.models.meeting import Meeting
-from app.repositories.crm_sync_repository import CrmSyncRepository
-from app.repositories.meeting_repository import MeetingRepository
-from app.services.crm_service import CRMService
-from app.services.extraction_service import ExtractionService
-from app.services.notification_service import NotificationService
-from app.services.transcription_service import TranscriptionService
+from app.api.schemas.envelope import ResponseMetadata, SuccessEnvelope
+from app.api.schemas.process import ProcessRequest, ProcessResponse
+from app.core.logging import correlation_id_ctx
+from app.dependencies import get_db_session, get_process_service
+from app.services.process_service import DuplicateMeeting, MeetingProcessService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 
-class ProcessMeetingRequest(BaseModel):
-    """Request payload to process a meeting."""
-
-    transcript_text: str = Field(
-        ..., min_length=1, max_length=100_000, description="Meeting transcript text."
-    )
-    deal_id: str = Field(default="deal_mock_1", description="CRM deal identifier to update.")
-    project_id: str | None = Field(
-        default=None, description="Linked project id for series grouping."
-    )
-    calendar_event_id: str | None = Field(
-        default=None, description="Optional calendar event id to fetch metadata."
-    )
-
-
-class ProcessMeetingResponse(BaseModel):
-    """Response payload for meeting processing."""
-
-    meeting: Meeting = Field(..., description="Structured meeting output.")
-    crm_update: dict[str, Any] = Field(..., description="Applied CRM update summary.")
-
-
-@router.post("/process", response_model=ProcessMeetingResponse)
+@router.post("/process", status_code=202, response_model=SuccessEnvelope[ProcessResponse])
 async def process_meeting(
-    request: ProcessMeetingRequest,
+    http_request: Request,
     session: AsyncSession = Depends(get_db_session),
-    transcription_service: TranscriptionService = Depends(get_transcription_service),
-    extraction_service: ExtractionService = Depends(get_extraction_service),
-    crm_service: CRMService = Depends(get_crm_service),
-    notification_service: NotificationService = Depends(get_notification_service),
-    calendar_client: CalendarClientMock = Depends(get_calendar_client),
-    meeting_repo: MeetingRepository = Depends(get_meeting_repo),
-    crm_sync_repo: CrmSyncRepository = Depends(get_crm_sync_repo),
-) -> ProcessMeetingResponse:
-    """Process a meeting transcript end-to-end."""
+    process_service: MeetingProcessService = Depends(get_process_service),
+) -> SuccessEnvelope[ProcessResponse]:
+    """Accept audio upload or pre-transcribed text and start processing."""
 
-    transcript = await transcription_service.get_transcript(
-        transcript_text=request.transcript_text, audio_bytes=None
-    )
-    occurred_at: datetime | None = None
-    if request.calendar_event_id:
-        meta = await calendar_client.fetch_event_metadata(request.calendar_event_id)
-        if meta:
-            title = str(meta.get("title") or "")
-            participants = meta.get("participants") or []
-            if not isinstance(participants, list):
-                participants = []
-            transcript = f"[Calendar: title={title} | participants={participants}]\n" + transcript
-            start_at = meta.get("start_at")
-            if isinstance(start_at, datetime):
-                occurred_at = start_at
-            elif isinstance(start_at, str):
-                occurred_at = datetime.fromisoformat(start_at.replace("Z", "+00:00"))
+    correlation_id = correlation_id_ctx.get() or ""
 
-    meeting = await extraction_service.extract_meeting(
-        transcript=transcript,
-        deal_id=request.deal_id,
-        project_id=request.project_id,
-        occurred_at=occurred_at,
-    )
+    input_type: Literal["audio", "text"]
+    content: bytes | str
+    filename: str | None = None
+    deal_id: str | None = None
+    project_id: str | None = None
 
-    await meeting_repo.upsert(session, meeting)
+    content_type = (http_request.headers.get("content-type") or "").lower()
 
-    crm_update = await crm_service.apply_updates(meeting=meeting, deal_id=request.deal_id)
-    changed = crm_update.get("changed_properties") or {}
-    if isinstance(changed, dict) and changed:
-        await crm_sync_repo.create(
-            session,
-            meeting_id=meeting.id,
-            deal_id=request.deal_id,
-            changed_properties=dict(changed),
-            previous_snapshot=dict(crm_update.get("previous_snapshot") or {}),
+    if "multipart/form-data" in content_type:
+        form = await http_request.form()
+        audio = form.get("audio")
+        if audio is not None and hasattr(audio, "read"):
+            input_type = "audio"
+            filename = getattr(audio, "filename", None) or "audio"
+            raw = await audio.read()
+            if not isinstance(raw, bytes | bytearray):
+                from app.core.exceptions import ValidationFailed
+
+                raise ValidationFailed("Audio part must be bytes.", context={})
+            content = bytes(raw)
+        else:
+            from app.core.exceptions import ValidationFailed
+
+            raise ValidationFailed("Multipart request must include an audio file part.", context={})
+    elif "application/json" in content_type:
+        body = await http_request.json()
+        parsed = ProcessRequest.model_validate(body)
+        if parsed.text is None or not parsed.text.strip():
+            from app.core.exceptions import ValidationFailed
+
+            raise ValidationFailed("JSON body must include non-empty text.", context={})
+        input_type = "text"
+        content = parsed.text.strip()
+        deal_id = parsed.deal_id
+        project_id = parsed.project_id
+    else:
+        from app.core.exceptions import ValidationFailed
+
+        raise ValidationFailed(
+            "Use multipart/form-data with audio file or application/json with text.",
+            context={"content_type": content_type},
         )
 
-    await notification_service.notify_meeting_events(
-        session, meeting=meeting, crm_result=crm_update
-    )
-    await session.commit()
+    try:
+        result = await process_service.process_meeting(
+            session,
+            content=content,
+            filename=filename,
+            input_type=input_type,
+            deal_id=deal_id,
+            project_id=project_id,
+        )
+        await session.commit()
+    except DuplicateMeeting as e:
+        # Surface as 409 via global handler.
+        raise e
 
-    logger.info("Processed meeting", extra={"meeting_id": meeting.id, "deal_id": request.deal_id})
-    return ProcessMeetingResponse(meeting=meeting, crm_update=crm_update)
+    logger.info(
+        "Accepted meeting processing",
+        extra={"meeting_id": result.meeting.id, "input_type": input_type, "deal_id": deal_id},
+    )
+    return SuccessEnvelope(
+        data=ProcessResponse(meeting_id=result.meeting.id, status="accepted"),
+        metadata=ResponseMetadata(correlation_id=correlation_id),
+    )

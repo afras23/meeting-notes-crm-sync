@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 # Third party
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Local
@@ -41,3 +42,20 @@ class CrmSyncRepository:
         session.add(row)
         await session.flush()
         return record_id
+
+    async def count_today(self, session: AsyncSession) -> int:
+        start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await session.execute(
+            select(func.count())
+            .select_from(CrmSyncRecordORM)
+            .where(CrmSyncRecordORM.created_at >= start)
+        )
+        return int(result.scalar_one() or 0)
+
+    async def has_sync_for_meeting(self, session: AsyncSession, meeting_id: str) -> bool:
+        result = await session.execute(
+            select(func.count())
+            .select_from(CrmSyncRecordORM)
+            .where(CrmSyncRecordORM.meeting_id == meeting_id)
+        )
+        return int(result.scalar_one() or 0) > 0

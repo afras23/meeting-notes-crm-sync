@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 # Third party
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 # Local
@@ -41,3 +42,20 @@ class NotificationRepository:
         session.add(row)
         await session.flush()
         return nid
+
+    async def count_today(self, session: AsyncSession) -> int:
+        start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await session.execute(
+            select(func.count())
+            .select_from(NotificationORM)
+            .where(NotificationORM.created_at >= start)
+        )
+        return int(result.scalar_one() or 0)
+
+    async def count_for_meeting(self, session: AsyncSession, meeting_id: str) -> int:
+        result = await session.execute(
+            select(func.count())
+            .select_from(NotificationORM)
+            .where(NotificationORM.meeting_id == meeting_id)
+        )
+        return int(result.scalar_one() or 0)

@@ -8,19 +8,21 @@ Creates the API app with middleware, dependency wiring, and routes.
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
-from uuid import uuid4
 
 # Third party
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 # Local
+from app.api.schemas.envelope import ErrorBody, ErrorEnvelope, ResponseMetadata
 from app.config import get_settings
 from app.core.exceptions import AppError
-from app.core.logging import configure_logging, correlation_id_ctx, get_correlation_id_from_headers
+from app.core.logging import configure_logging, correlation_id_ctx
+from app.core.middleware.correlation import correlation_id_middleware
+from app.core.middleware.rate_limit import RateLimiter, build_rate_limit_middleware
+from app.core.middleware.request_logging import request_logging_middleware
 from app.db.session import init_db
 
 logger = logging.getLogger(__name__)
@@ -45,20 +47,10 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="Meeting Notes → CRM Sync", version="1.0.0", lifespan=lifespan)
 
-    @app.middleware("http")
-    async def correlation_id_middleware(
-        request: Request,
-        call_next: Callable[[Request], Awaitable[Any]],
-    ) -> Any:
-        incoming_headers = {k.lower(): v for k, v in request.headers.items()}
-        correlation_id = get_correlation_id_from_headers(incoming_headers) or str(uuid4())
-        token = correlation_id_ctx.set(correlation_id)
-        try:
-            response = await call_next(request)
-            response.headers["x-correlation-id"] = correlation_id
-            return response
-        finally:
-            correlation_id_ctx.reset(token)
+    limiter = RateLimiter(requests_per_minute=settings.rate_limit_requests_per_minute)
+    app.middleware("http")(build_rate_limit_middleware(limiter=limiter, enabled=True))
+    app.middleware("http")(correlation_id_middleware)
+    app.middleware("http")(request_logging_middleware)
 
     @app.exception_handler(AppError)
     async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
@@ -67,8 +59,8 @@ def create_app() -> FastAPI:
             "Application error",
             extra={
                 "error_code": details.error_code,
-                "message": details.message,
-                "context": details.context,
+                "error_message": details.message,
+                "error_context": details.context,
             },
         )
         status_map = {
@@ -76,14 +68,17 @@ def create_app() -> FastAPI:
             "RATE_LIMITED": 429,
             "COST_LIMIT": 503,
             "EXTRACTION_FAILED": 500,
+            "TOO_MANY_REQUESTS": 429,
+            "DUPLICATE": 409,
+            "NOT_FOUND": 404,
         }
+        correlation_id = correlation_id_ctx.get() or ""
         return JSONResponse(
             status_code=status_map.get(details.error_code, 500),
-            content={
-                "error": details.error_code,
-                "message": details.message,
-                "details": details.context,
-            },
+            content=ErrorEnvelope(
+                error=ErrorBody(code=details.error_code, message=details.message),
+                metadata=ResponseMetadata(correlation_id=correlation_id),
+            ).model_dump(mode="json"),
         )
 
     # Routes
