@@ -4,14 +4,14 @@ Extraction service.
 Transforms meeting transcripts into validated structured meeting data with audit logging.
 """
 
+# Standard library
 from __future__ import annotations
 
-# Standard library
 import hashlib
 import json
 import logging
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 # Third party
@@ -22,10 +22,12 @@ from app.core.constants import MAX_INPUT_PREVIEW_CHARS
 from app.core.exceptions import ExtractionFailed, ValidationFailed
 from app.models.action_item import ActionItem
 from app.models.audit import AuditEntry
+from app.models.extraction import Attendee, DealStageChange, Decision, MeetingExtraction
 from app.models.meeting import CRMUpdates, Meeting
 from app.repositories.audit_repository import AuditRepository
 from app.services.ai.client import AIClient
 from app.services.ai.prompts import get_prompt
+from app.services.meeting_series_service import compute_meeting_series_id
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,32 @@ def _compute_input_hash(transcript: str) -> str:
     return hashlib.sha256(transcript.encode("utf-8")).hexdigest()
 
 
+def _parse_iso_datetime(value: object | None) -> datetime | None:
+    if value is None or not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _parse_iso_date(value: object | None) -> date | None:
+    if value is None or not isinstance(value, str):
+        return None
+    try:
+        return date.fromisoformat(value[:10])
+    except ValueError:
+        return None
+
+
+def _parse_float(value: object | None) -> float:
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        return float(value)
+    return 0.0
+
+
 class ExtractionService:
     """Extracts structured meeting data from transcripts."""
 
@@ -52,13 +80,19 @@ class ExtractionService:
         self,
         *,
         transcript: str,
-        prompt_name: str = "meeting_extraction_v1",
+        deal_id: str | None,
+        project_id: str | None,
+        occurred_at: datetime | None = None,
+        prompt_name: str = "meeting_extraction_v2",
     ) -> Meeting:
         """
         Extract meeting information from a transcript.
 
         Args:
             transcript: Transcript text.
+            deal_id: CRM deal id for series linking.
+            project_id: Project id for series linking.
+            occurred_at: Meeting time if known.
             prompt_name: Prompt template name.
 
         Returns:
@@ -78,7 +112,13 @@ class ExtractionService:
                 extra={"input_hash": input_hash},
             )
             parsed = existing.parsed_output
-            return self._meeting_from_parsed(parsed, transcript=cleaned_transcript)
+            return self._meeting_from_parsed(
+                parsed,
+                transcript=cleaned_transcript,
+                deal_id=deal_id,
+                project_id=project_id,
+                occurred_at=occurred_at,
+            )
 
         system_prompt, user_prompt, prompt_version = get_prompt(
             prompt_name, transcript=cleaned_transcript
@@ -98,7 +138,13 @@ class ExtractionService:
                 context={"preview": ai_call.content[:MAX_INPUT_PREVIEW_CHARS]},
             ) from e
 
-        meeting = self._meeting_from_parsed(parsed_output, transcript=cleaned_transcript)
+        meeting = self._meeting_from_parsed(
+            parsed_output,
+            transcript=cleaned_transcript,
+            deal_id=deal_id,
+            project_id=project_id,
+            occurred_at=occurred_at,
+        )
 
         audit_entry = AuditEntry(
             id=str(uuid4()),
@@ -144,50 +190,36 @@ class ExtractionService:
                 )
         return transcript
 
-    def _meeting_from_parsed(self, parsed: dict[str, object], *, transcript: str) -> Meeting:
+    def _meeting_from_parsed(
+        self,
+        parsed: dict[str, object],
+        *,
+        transcript: str,
+        deal_id: str | None,
+        project_id: str | None,
+        occurred_at: datetime | None,
+    ) -> Meeting:
         if not isinstance(parsed, dict):
             raise ExtractionFailed("AI output JSON must be an object.", context={})
 
         meeting_id = str(uuid4())
-        try:
-            crm_updates = CRMUpdates.model_validate(parsed.get("crm_updates") or {})
-            raw_action_items = parsed.get("action_items") or []
-            action_items: list[ActionItem] = []
-            if isinstance(raw_action_items, list):
-                for raw in raw_action_items:
-                    if not isinstance(raw, dict):
-                        continue
-                    action_items.append(
-                        ActionItem(
-                            id=str(uuid4()),
-                            meeting_id=meeting_id,
-                            owner=str(raw.get("owner")) if raw.get("owner") else None,
-                            description=str(raw.get("description") or "").strip() or "Follow up",
-                            due_at=None,
-                            status="open",
-                        )
-                    )
-            raw_participants = parsed.get("participants")
-            participants: list[str] = []
-            if isinstance(raw_participants, list):
-                participants = [str(p) for p in raw_participants]
+        series_id = compute_meeting_series_id(deal_id=deal_id, project_id=project_id)
 
-            confidence_raw = parsed.get("confidence")
-            confidence = 0.0
-            if isinstance(confidence_raw, int | float):
-                confidence = float(confidence_raw)
-            elif isinstance(confidence_raw, str):
-                confidence = float(confidence_raw) if confidence_raw.strip() else 0.0
+        try:
+            extraction = self._build_meeting_extraction(parsed, meeting_id=meeting_id)
+            crm_updates = self._build_crm_updates(parsed, extraction=extraction)
+
             meeting = Meeting(
                 id=meeting_id,
-                title=str(parsed.get("title") or "Untitled meeting"),
-                occurred_at=None,
+                meeting_series_id=series_id,
+                deal_id=deal_id,
+                project_id=project_id,
+                title=extraction.title,
+                occurred_at=occurred_at,
                 transcript=transcript,
-                summary=str(parsed.get("summary") or "No summary provided."),
-                participants=participants,
-                action_items=action_items,
+                extraction=extraction,
                 crm_updates=crm_updates,
-                confidence=confidence,
+                confidence=extraction.confidence,
             )
         except (ValueError, PydanticValidationError) as e:
             raise ExtractionFailed(
@@ -196,3 +228,86 @@ class ExtractionService:
             ) from e
 
         return meeting
+
+    def _build_meeting_extraction(
+        self, parsed: dict[str, object], *, meeting_id: str
+    ) -> MeetingExtraction:
+        attendees_raw = parsed.get("attendees")
+        attendees: list[Attendee] = []
+        if isinstance(attendees_raw, list):
+            for raw in attendees_raw:
+                if not isinstance(raw, dict):
+                    continue
+                attendees.append(
+                    Attendee(
+                        name=str(raw.get("name") or "Unknown"),
+                        role=str(raw["role"]) if raw.get("role") else None,
+                        email=str(raw["email"]) if raw.get("email") else None,
+                    )
+                )
+
+        raw_actions = parsed.get("action_items") or []
+        action_items: list[ActionItem] = []
+        if isinstance(raw_actions, list):
+            for raw in raw_actions:
+                if not isinstance(raw, dict):
+                    continue
+                action_items.append(
+                    ActionItem(
+                        id=str(uuid4()),
+                        meeting_id=meeting_id,
+                        owner=str(raw["owner"]) if raw.get("owner") else None,
+                        description=str(raw.get("description") or "").strip() or "Follow up",
+                        deadline=_parse_iso_datetime(raw.get("due_date_iso")),
+                        status=str(raw.get("status") or "open"),
+                    )
+                )
+
+        decisions_raw = parsed.get("decisions") or []
+        decisions: list[Decision] = []
+        if isinstance(decisions_raw, list):
+            for raw in decisions_raw:
+                if not isinstance(raw, dict):
+                    continue
+                decisions.append(
+                    Decision(
+                        text=str(raw.get("text") or "").strip() or "Decision",
+                        decided_by=str(raw["decided_by"]) if raw.get("decided_by") else None,
+                    )
+                )
+
+        dsc_raw = parsed.get("deal_stage_change")
+        deal_stage_change: DealStageChange | None = None
+        if isinstance(dsc_raw, dict):
+            deal_stage_change = DealStageChange(
+                old_stage=str(dsc_raw["old_stage"]) if dsc_raw.get("old_stage") else None,
+                new_stage=str(dsc_raw["new_stage"]) if dsc_raw.get("new_stage") else None,
+            )
+
+        follow_up_date = _parse_iso_date(parsed.get("follow_up_date"))
+        next_steps = str(parsed["next_steps"]) if parsed.get("next_steps") else None
+        sentiment = str(parsed["sentiment"]) if parsed.get("sentiment") else None
+
+        confidence = _parse_float(parsed.get("confidence"))
+
+        return MeetingExtraction(
+            title=str(parsed.get("title") or "Untitled meeting"),
+            summary=str(parsed.get("summary") or "No summary provided."),
+            attendees=attendees,
+            action_items=action_items,
+            decisions=decisions,
+            deal_stage_change=deal_stage_change,
+            next_steps=next_steps,
+            follow_up_date=follow_up_date,
+            sentiment=sentiment,
+            confidence=confidence,
+        )
+
+    def _build_crm_updates(
+        self, parsed: dict[str, object], *, extraction: MeetingExtraction
+    ) -> CRMUpdates:
+        raw_crm = parsed.get("crm_updates") or {}
+        crm_updates = CRMUpdates.model_validate(raw_crm if isinstance(raw_crm, dict) else {})
+        if extraction.deal_stage_change and extraction.deal_stage_change.new_stage:
+            crm_updates.deal.stage = extraction.deal_stage_change.new_stage
+        return crm_updates

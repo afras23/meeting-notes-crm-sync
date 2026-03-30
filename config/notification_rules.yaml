@@ -1,7 +1,31 @@
-version: "1"
+version: "2"
+
+# event: meeting_processed | new_action_items | deal_stage_change | low_confidence
 rules:
+  - name: "slack_on_new_action_items"
+    when:
+      event: "new_action_items"
+    notify:
+      slack: true
+      email: false
+
+  - name: "slack_on_deal_stage_change"
+    when:
+      event: "deal_stage_change"
+    notify:
+      slack: true
+      email: false
+
+  - name: "email_meeting_summary"
+    when:
+      event: "meeting_processed"
+    notify:
+      slack: false
+      email: true
+
   - name: "notify_on_low_confidence"
     when:
+      event: "low_confidence"
       confidence_lt: 0.85
     notify:
       slack: true

@@ -25,11 +25,18 @@ class CRMEntityMapping(BaseModel):
     )
 
 
-class CRMMappingConfig(BaseModel):
-    """Top-level CRM mapping configuration."""
+class CRMMappingBundle(BaseModel):
+    """Entity mappings for one CRM product (e.g. HubSpot)."""
 
-    version: str = Field(..., description="Mapping config version.")
-    crm: str = Field(..., description="CRM identifier.")
     entities: dict[str, CRMEntityMapping] = Field(
         default_factory=dict, description="Entity mappings."
+    )
+
+
+class CRMMappingRoot(BaseModel):
+    """Top-level file supporting multiple CRMs."""
+
+    version: str = Field(..., description="Mapping config version.")
+    crm_mappings: dict[str, CRMMappingBundle] = Field(
+        default_factory=dict, description="Per-CRM mapping bundles keyed by CRM id."
     )

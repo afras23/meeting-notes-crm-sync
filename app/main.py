@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from app.config import get_settings
 from app.core.exceptions import AppError
 from app.core.logging import configure_logging, correlation_id_ctx, get_correlation_id_from_headers
+from app.db.session import init_db
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,8 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(log_level=settings.log_level)
     logger.info("Application starting", extra={"env": settings.app_env})
+    if settings.app_env in ("development", "test"):
+        await init_db()
     yield
     logger.info("Application shutting down")
 

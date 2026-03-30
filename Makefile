@@ -35,3 +35,6 @@ compose-up:
 
 compose-down:
 	docker compose down -v
+
+migrate:
+	alembic upgrade head

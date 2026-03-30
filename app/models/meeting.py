@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 # Local
 from app.models.action_item import ActionItem
+from app.models.extraction import MeetingExtraction
 
 
 class CRMDealUpdate(BaseModel):
@@ -33,19 +34,26 @@ class Meeting(BaseModel):
     """A processed meeting record."""
 
     id: str = Field(..., description="Meeting identifier.")
-    title: str = Field(..., min_length=1, description="Meeting title.")
+    meeting_series_id: str = Field(..., description="Series this meeting belongs to.")
+    deal_id: str | None = Field(default=None, description="Linked CRM deal id.")
+    project_id: str | None = Field(default=None, description="Linked internal project id.")
+    title: str = Field(..., min_length=1, description="Meeting title (mirrors extraction.title).")
     occurred_at: datetime | None = Field(
         default=None, description="When the meeting occurred (UTC)."
     )
     transcript: str = Field(
         ..., min_length=1, description="Meeting transcript (or summarized notes)."
     )
-    summary: str = Field(..., min_length=1, description="Short meeting summary.")
-    participants: list[str] = Field(default_factory=list, description="Participant names/emails.")
-    action_items: list[ActionItem] = Field(
-        default_factory=list, description="Extracted action items."
+    extraction: MeetingExtraction = Field(
+        ..., description="Structured extraction (attendees, actions, decisions, etc.)."
     )
     crm_updates: CRMUpdates = Field(
-        default_factory=CRMUpdates, description="Structured CRM updates."
+        default_factory=CRMUpdates, description="Mapped CRM field updates."
     )
-    confidence: float = Field(..., ge=0.0, le=1.0, description="Extraction confidence score.")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Top-level extraction confidence.")
+
+    @property
+    def action_items(self) -> list[ActionItem]:
+        """Convenience: action items from extraction."""
+
+        return self.extraction.action_items

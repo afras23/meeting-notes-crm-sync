@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="DEBUG|INFO|WARNING|ERROR|CRITICAL")
     api_prefix: str = Field(default="/api/v1", description="API route prefix.")
 
+    # Database
+    database_url: str = Field(
+        default="sqlite+aiosqlite:///./app.db",
+        description="Async SQLAlchemy database URL (e.g. sqlite+aiosqlite:///./app.db).",
+    )
+
     # AI
     ai_provider: str = Field(default="mock", description="mock|anthropic|openai")
     ai_model: str = Field(default="mock-llm", description="Model identifier for cost tracking.")
@@ -31,9 +37,13 @@ class Settings(BaseSettings):
 
     # CRM
     crm_provider: str = Field(default="hubspot_mock", description="hubspot_mock")
+    crm_mapping_crm: str = Field(
+        default="hubspot",
+        description="Key under crm_mappings in config/crm_mapping.yaml.",
+    )
 
     # Notifications
-    slack_webhook_url: str = Field(default="", description="Slack webhook URL (optional).")
+    slack_webhook_url: str = Field(default="", description="Default Slack webhook URL (optional).")
     email_from: str = Field(
         default="no-reply@example.com", description="Sender email for notifications."
     )

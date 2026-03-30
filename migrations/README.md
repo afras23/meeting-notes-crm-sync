@@ -1,3 +1,7 @@
-This folder is reserved for database migrations (e.g., Alembic).
+Alembic migrations live here. Apply with:
 
-The current rebuild uses in-memory repositories to keep the system runnable without external services.
+```bash
+alembic upgrade head
+```
+
+Set `DATABASE_URL` to a sync URL for offline tooling (e.g. `sqlite:///./app.db`). The app runtime uses async SQLAlchemy URLs such as `sqlite+aiosqlite:///./app.db`.

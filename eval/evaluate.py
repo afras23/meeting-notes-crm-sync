@@ -66,7 +66,11 @@ async def _run_eval() -> dict[str, object]:
     per_check: dict[str, dict[str, int]] = {c: {"correct": 0, "total": 0} for c in checks}
 
     for case in cases:
-        meeting = await service.extract_meeting(transcript=case.input_text)
+        meeting = await service.extract_meeting(
+            transcript=case.input_text,
+            deal_id=None,
+            project_id=None,
+        )
         actual = meeting.model_dump(mode="json")
         for check in checks:
             expected_value = _get_nested(case.expected, check)

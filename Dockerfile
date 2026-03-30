@@ -12,6 +12,7 @@ COPY --from=builder /install /usr/local
 COPY app/ ./app/
 COPY config/ ./config/
 COPY migrations/ ./migrations/
+COPY alembic.ini ./
 COPY scripts/ ./scripts/
 COPY eval/ ./eval/
 COPY pyproject.toml Makefile ./

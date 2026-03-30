@@ -1,35 +1,37 @@
 """
-Action item repository.
-
-Provides persistence abstraction for action items (in-memory implementation by default).
+Action item repository (async SQLAlchemy).
 """
 
 # Standard library
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+# Third party
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Local
+from app.db.tables import ActionItemORM
 from app.models.action_item import ActionItem
 
 
-@dataclass
 class ActionItemRepository:
-    """In-memory repository for action items."""
+    """Load action items for meetings."""
 
-    _actions_by_id: dict[str, ActionItem] = field(default_factory=dict)
+    async def list_by_meeting(self, session: AsyncSession, meeting_id: str) -> list[ActionItem]:
+        """Return action items for a meeting."""
 
-    async def upsert(self, action_item: ActionItem) -> None:
-        """Insert or update an action item record."""
-
-        self._actions_by_id[action_item.id] = action_item
-
-    async def get(self, action_item_id: str) -> ActionItem | None:
-        """Get an action item by id."""
-
-        return self._actions_by_id.get(action_item_id)
-
-    async def list_by_meeting(self, meeting_id: str) -> list[ActionItem]:
-        """List action items for a meeting."""
-
-        return [a for a in self._actions_by_id.values() if a.meeting_id == meeting_id]
+        result = await session.execute(
+            select(ActionItemORM).where(ActionItemORM.meeting_id == meeting_id)
+        )
+        rows = result.scalars().all()
+        return [
+            ActionItem(
+                id=r.id,
+                meeting_id=r.meeting_id,
+                owner=r.owner,
+                description=r.description,
+                deadline=r.deadline,
+                status=r.status,
+            )
+            for r in rows
+        ]

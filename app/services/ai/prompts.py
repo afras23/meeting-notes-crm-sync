@@ -21,21 +21,26 @@ class PromptTemplate:
     user_template: Template
 
 
-MEETING_EXTRACTION_V1 = PromptTemplate(
-    name="meeting_extraction_v1",
-    version="1.0.0",
+MEETING_EXTRACTION_V2 = PromptTemplate(
+    name="meeting_extraction_v2",
+    version="2.0.0",
     system=(
         "You are a meeting analysis system. Extract structured data from meeting transcripts. "
         "Return ONLY valid JSON. Never invent values not present in the transcript. "
         "If a field cannot be determined, use null or an empty list."
     ),
     user_template=Template(
-        "Extract meeting metadata, summary, action items, and CRM updates.\n\n"
+        "Extract a rich meeting schema from the transcript.\n\n"
         "Return JSON with keys:\n"
         "- title (string)\n"
         "- summary (string)\n"
-        "- participants (array of strings)\n"
-        "- action_items (array of objects: owner, description, due_date_iso)\n"
+        "- attendees (array of {name, role, email})\n"
+        "- action_items (array of {owner, description, due_date_iso, status})\n"
+        "- decisions (array of {text, decided_by})\n"
+        "- deal_stage_change (object: {old_stage, new_stage} or null)\n"
+        "- next_steps (string or null)\n"
+        "- follow_up_date (ISO date string or null)\n"
+        "- sentiment (string or null)\n"
         "- crm_updates (object: deal: {amount, stage})\n"
         "- confidence (number 0.0-1.0)\n\n"
         "Transcript:\n"
@@ -45,7 +50,7 @@ MEETING_EXTRACTION_V1 = PromptTemplate(
 
 
 PROMPTS: dict[str, PromptTemplate] = {
-    MEETING_EXTRACTION_V1.name: MEETING_EXTRACTION_V1,
+    MEETING_EXTRACTION_V2.name: MEETING_EXTRACTION_V2,
 }
 
 

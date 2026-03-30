@@ -1,12 +1,15 @@
-version: "1"
-crm: "hubspot"
+version: "2"
 
-entities:
-  deal:
-    fields:
-      dealname:
-        source: "meeting.title"
-      amount:
-        source: "crm_updates.deal.amount"
-      dealstage:
-        source: "crm_updates.deal.stage"
+# Field mappings per CRM key (e.g. hubspot). Paths use meeting.model_dump() shape:
+# meeting.title, meeting.extraction.*, meeting.crm_updates.deal.*
+crm_mappings:
+  hubspot:
+    entities:
+      deal:
+        fields:
+          dealname:
+            source: "meeting.title"
+          amount:
+            source: "meeting.crm_updates.deal.amount"
+          dealstage:
+            source: "meeting.crm_updates.deal.stage"

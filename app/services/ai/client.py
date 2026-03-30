@@ -154,32 +154,45 @@ class AIClient:
 
     def _mock_response(self, *, user_prompt: str) -> str:
         """
-        Produce a deterministic mock extraction.
-
-        This enables full end-to-end tests without any external model calls.
+        Produce a deterministic mock extraction matching MeetingExtraction schema.
         """
 
         lower = user_prompt.lower()
         stage = "qualification"
+        old_stage = "lead"
         if "proposal" in lower:
             stage = "proposal"
+            old_stage = "qualification"
         if "closed won" in lower or "won" in lower:
             stage = "closed_won"
+            old_stage = "negotiation"
+
+        amount = 10000.0 if "10k" in lower else None
+        follow_up = "2026-04-15" if "follow" in lower else "2026-04-01"
 
         payload = {
             "title": "Sales call",
-            "summary": "Discussed requirements and next steps.",
-            "participants": ["rep@example.com", "buyer@example.com"],
+            "summary": "Discussed requirements, stakeholders, and next steps.",
+            "attendees": [
+                {"name": "Alex Rep", "role": "AE", "email": "rep@example.com"},
+                {"name": "Jordan Buyer", "role": "champion", "email": "buyer@example.com"},
+            ],
             "action_items": [
                 {
                     "owner": "rep@example.com",
-                    "description": "Send follow-up email",
-                    "due_date_iso": None,
+                    "description": "Send follow-up email with pricing",
+                    "due_date_iso": "2026-04-05T17:00:00+00:00",
+                    "status": "open",
                 }
             ],
-            "crm_updates": {
-                "deal": {"amount": 10000.0 if "10k" in lower else None, "stage": stage}
-            },
+            "decisions": [
+                {"text": "Proceed with technical review next week.", "decided_by": "Jordan Buyer"}
+            ],
+            "deal_stage_change": {"old_stage": old_stage, "new_stage": stage},
+            "next_steps": "Schedule technical deep-dive and confirm budget.",
+            "follow_up_date": follow_up,
+            "sentiment": "positive",
+            "crm_updates": {"deal": {"amount": amount, "stage": stage}},
             "confidence": 0.9,
         }
         return json.dumps(payload)
