@@ -23,7 +23,7 @@ flowchart LR
 
   subgraph pipeline [Pipeline]
     TR[Transcribe\nWhisper / mock]
-    P[Heuristic speaker lines\n(not diarisation)]
+    P["Heuristic speaker lines<br/>(not diarisation)"]
     E[Extract\nLLM + schema]
     D[Diff detect\nvs CRM snapshot]
     C[CRM sync\nHubSpot mock]
