@@ -52,7 +52,7 @@ Diff detection runs **before** CRM write: desired fields from YAML mapping are c
 
 ### Evaluation Results
 
-Latest harness run (`make evaluate`, labeled gold JSON replay — see `docs/problem-definition.md` for methodology):
+These figures come from the included labeled evaluation set exercised by make evaluate (gold JSON replay with the project's mock stack; see docs/problem-definition.md for the exact setup). The run is reproducible on that fixture set; it does not represent a universal production benchmark across arbitrary meetings or configurations.
 
 | Metric | Value |
 |--------|-------|
