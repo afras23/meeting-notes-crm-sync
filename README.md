@@ -119,7 +119,6 @@ See also `docs/decisions/` for ADRs.
 | [docs/architecture.md](docs/architecture.md) | Detailed pipeline and integrations |
 | [docs/runbook.md](docs/runbook.md) | Operations and troubleshooting |
 | [docs/problem-definition.md](docs/problem-definition.md) | Business context |
-| [docs/DEFINITION_OF_DONE.md](docs/DEFINITION_OF_DONE.md) | DoD checklist status |
 | [CHANGELOG.md](CHANGELOG.md) | Release phases |
 
 ### License
