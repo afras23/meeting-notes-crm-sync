@@ -30,7 +30,7 @@ async def test_audio_file_calls_whisper_mock_and_returns_transcript() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pre_transcribed_text_parsed_with_speaker_attribution() -> None:
+async def test_parse_transcript_applies_heuristic_speaker_labels() -> None:
     settings = Settings()
     ai = AIClient(provider="mock", model="m", max_daily_cost_usd=10.0, timeout_seconds=30)
     svc = TranscriptionService(LlmClient(ai=ai), settings)
@@ -38,11 +38,11 @@ async def test_pre_transcribed_text_parsed_with_speaker_attribution() -> None:
     parsed = await svc.parse_transcript("John: Hello\nSpeaker 2: Hi")
     assert parsed.raw_text.startswith("John:")
     assert len(parsed.speakers) == 2
-    assert parsed.speakers[0].speaker_id in ("John", "john")
+    assert parsed.speakers[0].speaker_id == "John"
 
 
 @pytest.mark.asyncio
-async def test_no_speaker_markers_treated_as_single_speaker() -> None:
+async def test_parse_transcript_without_labels_yields_single_heuristic_speaker() -> None:
     settings = Settings()
     ai = AIClient(provider="mock", model="m", max_daily_cost_usd=10.0, timeout_seconds=30)
     svc = TranscriptionService(LlmClient(ai=ai), settings)

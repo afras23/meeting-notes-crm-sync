@@ -8,15 +8,15 @@ Accepts pre-transcribed text and provides a placeholder interface for audio tran
 from __future__ import annotations
 
 import logging
-import re
 import time
 from dataclasses import dataclass
 
 # Local
 from app.config import Settings
 from app.core.exceptions import ValidationFailed
-from app.models.transcription import ParsedTranscript, SpeakerSegment, TranscriptResult
+from app.models.transcription import ParsedTranscript, TranscriptResult
 from app.services.ai.client import AIClient
+from app.services.heuristic_speaker_attribution import parse_heuristic_speaker_segments
 
 logger = logging.getLogger(__name__)
 
@@ -45,63 +45,24 @@ def _estimate_transcription_cost_usd(*, duration_seconds: float) -> float:
     return round((duration_seconds / 60.0) * 0.006, 6)
 
 
-_SPEAKER_PREFIX_RE = re.compile(
-    r"^\s*(?:\[(?P<bracket>[^\]]+)\]|(?P<label>[A-Za-z][A-Za-z0-9 _.-]{0,40}))\s*:\s*(?P<text>.*)$"
-)
-
-
-def _parse_speaker_segments(raw_text: str) -> list[SpeakerSegment]:
-    lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
-    segments: list[SpeakerSegment] = []
-    current_speaker: str | None = None
-    current_lines: list[str] = []
-
-    def flush() -> None:
-        nonlocal current_speaker, current_lines
-        if current_speaker is None:
-            return
-        text = " ".join(current_lines).strip()
-        if text:
-            segments.append(SpeakerSegment(speaker_id=current_speaker, text=text))
-        current_speaker = None
-        current_lines = []
-
-    found_any_marker = False
-    for line in lines:
-        m = _SPEAKER_PREFIX_RE.match(line)
-        if m:
-            speaker = (m.group("bracket") or m.group("label") or "").strip()
-            if speaker:
-                found_any_marker = True
-                flush()
-                current_speaker = speaker
-                current_lines = [m.group("text").strip()]
-                continue
-
-        if current_speaker is None:
-            current_speaker = "Speaker 1"
-        current_lines.append(line)
-
-    flush()
-
-    if not found_any_marker:
-        collapsed = " ".join(lines).strip()
-        if not collapsed:
-            return []
-        return [SpeakerSegment(speaker_id="Speaker 1", text=collapsed)]
-
-    return segments
-
-
 class TranscriptionService:
-    """Accept audio bytes or pre-transcribed text and return structured transcript data."""
+    """Accept audio bytes or pre-transcribed text and return structured transcript data.
+
+    Speaker boundaries come from :func:`parse_heuristic_speaker_segments` (line-based
+    labels), not from audio speaker diarisation.
+    """
 
     def __init__(self, llm_client: LlmClient, settings: Settings) -> None:
         self._llm_client = llm_client
         self._settings = settings
 
     async def transcribe(self, audio_content: bytes, filename: str) -> TranscriptResult:
-        """Accept audio file, call Whisper API mock, return transcript."""
+        """Accept audio file, call Whisper API mock, return transcript.
+
+        The mock returns fixed multi-speaker text; segments are still split via
+        heuristic line-prefix parsing (see ``heuristic_speaker_attribution``), not
+        diarisation from the audio signal.
+        """
 
         if not audio_content:
             raise ValidationFailed("Audio content must be non-empty.", context={})
@@ -126,7 +87,7 @@ class TranscriptionService:
             "Speaker 2: Sounds good. We should also confirm the budget and timeline.\n"
             "Speaker 1: Agreed—I'll send a follow-up with pricing and schedule the technical deep-dive."
         )
-        speakers = _parse_speaker_segments(raw_text)
+        speakers = parse_heuristic_speaker_segments(raw_text)
         latency_ms = (time.monotonic() - start) * 1000.0
         cost_usd = _estimate_transcription_cost_usd(duration_seconds=duration_seconds)
 
@@ -140,10 +101,10 @@ class TranscriptionService:
         )
 
     async def parse_transcript(self, raw_text: str) -> ParsedTranscript:
-        """Accept pre-transcribed text, parse into structured format."""
+        """Parse pre-transcribed text into segments using heuristic speaker labels."""
 
         text = raw_text.strip()
         if not text:
             raise ValidationFailed("Transcript text must be non-empty.", context={})
-        speakers = _parse_speaker_segments(text)
+        speakers = parse_heuristic_speaker_segments(text)
         return ParsedTranscript(raw_text=text, speakers=speakers)
